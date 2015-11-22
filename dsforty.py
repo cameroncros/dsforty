@@ -28,6 +28,7 @@ def main():
     '-r', '--resolution',
     choices=[300, 600],
     default=300,
+    type=int,
     help='Scan resolution - defaults to 300 dpi'
   )
   parser.add_argument(
@@ -71,18 +72,19 @@ def main():
   # CMX sets color correction: (UNIT -> disable, UM08 -> for C024)
   # RSM, RSS sets resolution
 
+  width, height = args.resolution * MAX_W, args.resolution * MAX_H
+
   params = deque()
   params.append(b'#ADF#COL')
   params.append(CLRS[args.color])
   params.append(b'#FMTJPG #JPGd100#GMMUG18#CMXUNIT')
   params.append(
     b'#RSMi%07d#RSSi%07d' % (args.resolution, args.resolution))
-  params.append(b'#ACQi0000000i0000000i%07di%07d' % (
-    args.resolution * MAX_W, args.resolution * MAX_H))
+  params.append(b'#ACQi0000000i0000000i%07di%07d' % (width, height))
   params.append(b'#PAGd000#BSZi1048576') # pages and buffer size
   for gmt in (b'RED', b'GRN', b'BLU'):
     params.append(b'#GMT' + gmt + b' h100')
-    params.append(bytes(reversed(range(256))))
+    params.append(bytes(range(256)))
   params = b''.join(params)
 
   write(b'PARAx%07X' % len(params))
@@ -119,14 +121,23 @@ def main():
       dl -= len(d)
       tmpout.write(d)
 
-  tmpout.flush()
   write('FIN x0000000')
+  tmpout.flush()
+  tmpout.seek(0)
 
   if final_height is None:
     print('No final height reported', file=sys.stderr)
     exit(1)
 
-  # TODO
+  # Crop the height
+
+  jpegtran = Popen(
+    ['jpegtran', '-crop', '%dx%d+0+0' % (width, final_height)],
+    stdin=tmpout
+  )
+  if jpegtran.wait() != 0:
+    print('Error while cropping', file=sys.stderr)
+    exit(1)
 
 if __name__ == '__main__':
   main()
