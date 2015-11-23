@@ -133,9 +133,7 @@ def main():
     ['jpegtran', '-crop', '%dx%d+0+0' % (width, final_height)],
     stdin=tmpout
   )
-  if jpegtran.wait() != 0:
-    print('Error while cropping', file=sys.stderr)
-    exit(1)
+  jpegtran.wait()
 
 if __name__ == '__main__':
   main()
