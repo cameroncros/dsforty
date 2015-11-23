@@ -114,8 +114,6 @@ def main():
     if pen_idx >= 0:
       final_height = int(ret[pen_idx + 13:pen_idx + 20])
     dl = int(ret[5:12], 16)
-    if dl == 0:
-      continue
     while dl > 0:
       d = read()
       dl -= len(d)
