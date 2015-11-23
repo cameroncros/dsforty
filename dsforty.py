@@ -119,7 +119,7 @@ def main():
       dl -= len(d)
       tmpout.write(d)
 
-  write('FIN x0000000')
+  write(b'FIN x0000000')
   tmpout.flush()
   tmpout.seek(0)
 
