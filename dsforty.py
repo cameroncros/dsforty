@@ -5,65 +5,107 @@
 from subprocess import Popen, PIPE
 from collections import deque
 import argparse
+import itertools
+import socket
 import sys
 import tempfile
 import usb.core
 
-IN_BUF_SIZE = 1024 ** 2
-VENDOR = 0x04b8
-PRODUCT = 0x0152
-EP_OUT = 0x02
-EP_IN = 0x81
 MAX_W = 8.5 # in inches
 MAX_H = 14 # in inches
 
 CLRS = {'m': b'M001', 'g': b'M008', 'c': b'C024'}
 
-def main():
-  parser = argparse.ArgumentParser(
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-    description='Scan a page on Epson DS-40'
-  )
-  parser.add_argument(
-    '-r', '--resolution',
-    choices=[300, 600],
-    default=300,
-    type=int,
-    help='Scan resolution - defaults to 300 dpi'
-  )
-  parser.add_argument(
-    '-c', '--color',
-    choices=list(sorted(CLRS)),
-    default='c',
-    help='Scan color: `m` for mono, `g` for grayscale and `c` for color'
-         ' - defaults to color'
-  )
-  args = parser.parse_args()
+class USBDev:
 
-  # Setup device
+  DESC = 'usb'
+  IN_BUF_SIZE = 1024 ** 2
+  VENDOR = 0x04b8
+  PRODUCT = 0x0152
+  EP_OUT = 0x02
+  EP_IN = 0x81
+  NAME = 'Epson DS-40'
+
+  @staticmethod
+  def enum():
+    return [USBDev(d) for d in usb.core.find(
+      idVendor=USBDev.VENDOR, idProduct=USBDev.PRODUCT, find_all=True
+    ) if d.product == USBDev.NAME]
+
+  def __init__(self, usbdev):
+    self.dev = usbdev
+
+  def init(self):
+    self.dev.set_configuration()
+
+  def id(self):
+    return self.dev.serial_number
+
+  def read(self):
+    d = self.dev.read(USBDev.EP_IN, USBDev.IN_BUF_SIZE)
+    return bytes(d)
+
+  def write(self, d):
+    self.dev.write(USBDev.EP_OUT, d)
+
+class NetDev:
+
+  DESC = 'net'
+
+  @staticmethod
+  def enum():
+    return [] # TODO
+
+  def __init__(self, ip):
+    self.ip = ip
+
+  def init(self):
+    pass # TODO
+
+  def id(self):
+    pass # TODO
+
+  def read(self):
+    pass # TODO
+
+  def write(self, d):
+    pass # TODO
+
+DEV_TYPES = (USBDev, NetDev)
+
+def all_devs():
+  yield from itertools.chain(*(t.enum() for t in DEV_TYPES))
+
+def do_list(parser, args):
+  fmt = '{1}:{0}' if args.type else '{0}'
+  for dev in all_devs():
+    print(fmt.format(dev.id(), dev.DESC))
+
+def do_scan(parser, args):
+
+  fltr = lambda x: x.id() == args.id if args.id else lambda x: x
+  devs = list(filter(fltr, all_devs()))
+  if len(devs) == 0:
+    print('no scanner found', file=sys.stderr)
+    exit(1)
+  if len(devs) > 1:
+    print('more than one scanner found - use `-i` option to pick one',
+      file=sys.stderr)
+    exit(1)
 
   tmpout = tempfile.TemporaryFile(mode='r+b')
   sys.stdout = open(sys.stdout.fileno(), 'wb')
-  dev = usb.core.find(idVendor=VENDOR, idProduct=PRODUCT)
 
-  if dev is None:
-    print('DS-40 is not available', file=sys.stderr)
-    exit(1)
+  # Setup device
 
-  dev.set_configuration()
+  dev = devs[0]
+  dev.init()
 
-  def read():
-    d = dev.read(EP_IN, IN_BUF_SIZE)
-    return bytes(d)
-
-  def write(d):
-    dev.write(EP_OUT, d)
-
-  write(b'FIN x0000000') # finish off anything currently going on
-  read() # throw away the response, don't need it
-  write(b'\x1c\x58') # put scanner in control mode
-  if read() != b'\x06':
-    print('Scanner didn\'t ACK control mode', file=sys.stderr)
+  dev.write(b'FIN x0000000') # finish off anything currently going on
+  dev.read() # throw away the response, don't need it
+  dev.write(b'\x1c\x58') # put scanner in control mode
+  if dev.read() != b'\x06':
+    print('scanner didn\'t ACK control mode', file=sys.stderr)
     exit(1)
 
   # Setup parameters:
@@ -87,26 +129,26 @@ def main():
     params.append(bytes(range(256)))
   params = b''.join(params)
 
-  write(b'PARAx%07X' % len(params))
-  write(params)
-  if b'#parOK' not in read():
-    print('Scanner didn\'t accept params', file=sys.stderr)
+  dev.write(b'PARAx%07X' % len(params))
+  dev.write(params)
+  if b'#parOK' not in dev.read():
+    print('scanner didn\'t accept params', file=sys.stderr)
     exit(1)
 
   # Start scanning
 
-  write(b'TRDTx0000000')
-  ret = read()
+  dev.write(b'TRDTx0000000')
+  ret = dev.read()
   if b'#errADF PE' in ret:
-    print('No paper to scan', file=sys.stderr)
+    print('no paper to scan', file=sys.stderr)
     exit(1)
 
   final_height = None
   while True:
-    write(b'IMG x0000000')
-    ret = read()
+    dev.write(b'IMG x0000000')
+    ret = dev.read()
     if not ret.startswith(b'IMG x'):
-      print('Bad image data ack', file=sys.stderr)
+      print('bad image data ack', file=sys.stderr)
       exit(1)
     if b'#errADF PE' in ret:
       break
@@ -115,16 +157,16 @@ def main():
       final_height = int(ret[pen_idx + 13:pen_idx + 20])
     dl = int(ret[5:12], 16)
     while dl > 0:
-      d = read()
+      d = dev.read()
       dl -= len(d)
       tmpout.write(d)
 
-  write(b'FIN x0000000')
+  dev.write(b'FIN x0000000')
   tmpout.flush()
   tmpout.seek(0)
 
   if final_height is None:
-    print('No final height reported', file=sys.stderr)
+    print('no final height reported', file=sys.stderr)
     exit(1)
 
   # Crop the height
@@ -134,6 +176,67 @@ def main():
     stdin=tmpout
   )
   jpegtran.wait()
+
+def do_config(parser, args):
+  pass # TODO
+
+def main():
+  parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    description='Scan a page on Epson DS-40'
+  )
+  subparsers = parser.add_subparsers(
+    title='main commands',
+    dest='cmd'
+  )
+  subparsers.required = True
+
+  parser_a = subparsers.add_parser(
+    'scan',
+    help='scan a page'
+  )
+  parser_a.add_argument(
+    '-r', '--resolution',
+    choices=[300, 600],
+    default=300,
+    type=int,
+    help='scan resolution - defaults to 300 dpi'
+  )
+  parser_a.add_argument(
+    '-c', '--color',
+    choices=list(sorted(CLRS)),
+    default='c',
+    help='scan color: `m` for mono, `g` for grayscale and `c` for color'
+         ' - defaults to color'
+  )
+  parser_a.add_argument(
+    '-i', '--id',
+    default=None,
+    help='unique id of the scanner in case there are multiple available'
+         ' - run `dsforty list` to get a list'
+  )
+  parser_a.set_defaults(fn=do_scan)
+
+  parser_a = subparsers.add_parser(
+    'list',
+    help='list all available scanners'
+  )
+  parser_a.add_argument(
+    '-t', '--type',
+    action='store_true',
+    help='display type of connection for each device'
+  )
+  parser_a.set_defaults(fn=do_list)
+
+  parser_a = subparsers.add_parser(
+    'config',
+    help='configure scanner'
+  )
+  # TODO
+  parser_a.set_defaults(fn=do_config)
+
+  args = parser.parse_args()
+  args.fn(parser, args)
 
 if __name__ == '__main__':
   main()
