@@ -121,6 +121,7 @@ def main():
       tmpout.write(d)
 
   write(b'FIN x0000000')
+  read()
   tmpout.flush()
   tmpout.seek(0)
 
