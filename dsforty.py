@@ -5,6 +5,7 @@
 from subprocess import Popen, PIPE
 from collections import deque
 import argparse
+import os
 import sys
 import tempfile
 import usb.core
@@ -63,7 +64,7 @@ def main():
   read() # throw away the response, don't need it
   write(b'\x1c\x58') # put scanner in control mode
   if read() != b'\x06':
-    print('Scanner didn\'t ACK control mode', file=sys.stderr)
+    print('scanner didn\'t ACK control mode', file=sys.stderr)
     exit(1)
 
   # Setup parameters:
@@ -80,8 +81,8 @@ def main():
   params.append(b'#FMTJPG #JPGd100#GMMUG18#CMXUNIT')
   params.append(
     b'#RSMi%07d#RSSi%07d' % (args.resolution, args.resolution))
-  params.append(b'#ACQi0000000i0000000i%07di%07d' % (width, height))
-  params.append(b'#PAGd000#BSZi1048576') # pages and buffer size
+  params.append(b'#ACQi%07di%07di%07di%07d' % (0, 0, width, height))
+  params.append(b'#PAGd000#BSZi%07d' % IN_BUF_SIZE)
   for gmt in (b'RED', b'GRN', b'BLU'):
     params.append(b'#GMT' + gmt + b' h100')
     params.append(bytes(range(256)))
@@ -90,7 +91,7 @@ def main():
   write(b'PARAx%07X' % len(params))
   write(params)
   if b'#parOK' not in read():
-    print('Scanner didn\'t accept params', file=sys.stderr)
+    print('scanner didn\'t accept params', file=sys.stderr)
     exit(1)
 
   # Start scanning
@@ -98,7 +99,7 @@ def main():
   write(b'TRDTx0000000')
   ret = read()
   if b'#errADF PE' in ret:
-    print('No paper to scan', file=sys.stderr)
+    print('no paper to scan', file=sys.stderr)
     exit(1)
 
   final_height = None
@@ -106,7 +107,7 @@ def main():
     write(b'IMG x0000000')
     ret = read()
     if not ret.startswith(b'IMG x'):
-      print('Bad image data ack', file=sys.stderr)
+      print('bad image data ack', file=sys.stderr)
       exit(1)
     if b'#errADF PE' in ret:
       break
@@ -124,16 +125,17 @@ def main():
   tmpout.seek(0)
 
   if final_height is None:
-    print('No final height reported', file=sys.stderr)
+    print('no final height reported', file=sys.stderr)
     exit(1)
 
   # Crop the height
 
   jpegtran = Popen(
     ['jpegtran', '-crop', '%dx%d+0+0' % (width, final_height)],
-    stdin=tmpout
+    stdin=tmpout, stderr=open(os.devnull, 'wb')
   )
   jpegtran.wait()
+  exit(0)
 
 if __name__ == '__main__':
   main()
