@@ -40,6 +40,14 @@ def find_edge(line, blank, vari, streak_thresh):
   return 0
 
 def main():
+  def arg_range(low, high):
+    def fn(v):
+      v = int(v)
+      if v < low or v > high:
+        raise argparse.ArgumentTypeError(
+          'must be in range %d..%d' % (low, high))
+      return v
+    return fn
   parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
     description='Scan a page on Epson DS-40'
@@ -57,6 +65,12 @@ def main():
     default='c',
     help='scan color: `g` for grayscale and `c` for color'
          ' - defaults to color'
+  )
+  parser.add_argument(
+    '-q', '--quality',
+    type=arg_range(1, 100),
+    default=100,
+    help='quality of output JPEG, between 1..100 - defaults to 100'
   )
   parser.add_argument(
     '-n', '--no-crop',
@@ -103,7 +117,7 @@ def main():
   params = deque()
   params.append(b'#ADF#COL')
   params.append(CLRS[args.color])
-  params.append(b'#FMTJPG #JPGd100#GMMUG18#CMXUNIT')
+  params.append(b'#FMTJPG #JPGd%03d#GMMUG18#CMXUNIT' % args.quality)
   params.append(
     b'#RSMi%07d#RSSi%07d' % (args.res, args.res))
   params.append(b'#ACQi%07di%07di%07di%07d' % (0, 0, width, height))
