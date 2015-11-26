@@ -47,14 +47,19 @@ def main():
     choices=[300, 600],
     default=300,
     type=int,
-    help='Scan resolution - defaults to 300 dpi'
+    help='scan resolution - defaults to 300 dpi'
   )
   parser.add_argument(
     '-c', '--color',
     choices=list(sorted(CLRS)),
     default='c',
-    help='Scan color: `g` for grayscale and `c` for color'
+    help='scan color: `g` for grayscale and `c` for color'
          ' - defaults to color'
+  )
+  parser.add_argument(
+    '-n', '--no-crop',
+    action='store_true',
+    help='do not crop vertical borders - use when autocrop messes up'
   )
   args = parser.parse_args()
 
@@ -151,7 +156,12 @@ def main():
   left, right = 0, width
   try:
     from PIL import Image
+  except ImportError:
+    if not args.no_crop:
+      print('PIL not installed - disabled autocrop', file=sys.stderr)
+      args.no_crop = True
 
+  if not args.no_crop:
     vnorm = (lambda x: (x, x, x)) if args.color == 'g' else lambda x: x
     line = [vnorm(p)
       for p in Image.open(tmpout).crop((0, 0, width, final_height))
@@ -165,9 +175,6 @@ def main():
       left, right = 0, width
       print('couldn\'t find edges', file=sys.stderr)
     tmpout.seek(0)
-
-  except ImportError:
-    pass
 
   # Crop
 
