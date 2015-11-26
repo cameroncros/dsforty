@@ -5,10 +5,12 @@
 from subprocess import Popen, PIPE
 from collections import deque
 import argparse
+import atexit
 import os
 import sys
 import tempfile
 import usb.core
+import usb.util
 
 IN_BUF_SIZE = 1024 ** 2
 VENDOR = 0x04b8
@@ -68,6 +70,7 @@ def main():
   tmpout = tempfile.TemporaryFile(mode='r+b')
   sys.stdout = open(sys.stdout.fileno(), 'wb')
   dev = usb.core.find(idVendor=VENDOR, idProduct=PRODUCT)
+  atexit.register(lambda: usb.util.dispose_resources(dev))
 
   if dev is None:
     print('DS-40 is not available', file=sys.stderr)
