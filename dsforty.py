@@ -84,12 +84,12 @@ def main():
   tmpout = tempfile.TemporaryFile(mode='r+b')
   sys.stdout = open(sys.stdout.fileno(), 'wb')
   dev = usb.core.find(idVendor=VENDOR, idProduct=PRODUCT)
-  atexit.register(lambda: usb.util.dispose_resources(dev))
 
   if dev is None:
     print('DS-40 is not available', file=sys.stderr)
     exit(1)
 
+  atexit.register(lambda: usb.util.dispose_resources(dev))
   dev.set_configuration()
 
   def read():
