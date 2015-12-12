@@ -9,6 +9,7 @@ import atexit
 import os
 import sys
 import tempfile
+import threading
 import usb.core
 import usb.util
 
@@ -159,8 +160,7 @@ def main():
       dl -= len(d)
       tmpout.write(d)
 
-  write(b'FIN x0000000')
-  read()
+  threading.Thread(target=dev.reset, daemon=True).start()
   tmpout.flush()
   tmpout.seek(0)
 
