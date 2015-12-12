@@ -100,8 +100,6 @@ def main():
   def write(d):
     dev.write(EP_OUT, d)
 
-  write(b'FIN x0000000') # finish off anything currently going on
-  read() # throw away the response, don't need it
   write(b'\x1c\x58') # put scanner in control mode
   if read() != b'\x06':
     print('scanner didn\'t ACK control mode', file=sys.stderr)
